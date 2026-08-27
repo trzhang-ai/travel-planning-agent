@@ -1,6 +1,8 @@
 [project]
 name = "agentsville-trip-planner"
 version = "0.1.0"
+description = "A constrained itinerary planning and ReAct revision workflow"
+readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "ipykernel==7.3.0",

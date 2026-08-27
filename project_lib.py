@@ -38,7 +38,8 @@ class ChatAgent:
     add messages, get responses, and maintain conversation context.
 
     Attributes:
-        system_prompt_template (str): Template for the system prompt using {variable_name} placeholders.
+        system_prompt (str): Instructions added as the first message in the
+            agent's conversation history.
     """
     system_prompt = "You are a helpful assistant."
     messages = []
@@ -83,8 +84,7 @@ class ChatAgent:
     def reset(self):
         """Reset the chat history and re-initialize with the system prompt.
 
-        This method clears all existing messages and adds the system prompt
-        formatted with the template_kwargs.
+        This method clears all existing messages and adds the system prompt.
         """
         from textwrap import dedent
 
@@ -113,7 +113,7 @@ class ChatAgent:
             messages=self.messages,
             model=model or self.model,
             client=client or self.client,
-            **kwargs
+            **kwargs,
         )
         if add_to_messages:
             self.add_message("assistant", response)
@@ -214,7 +214,7 @@ def do_chat_completion(messages: list[dict[str, str]], model=None, client=None, 
     """
     if client is None:
         raise ValueError("A valid OpenAI client must be provided.")
-    
+
     if model is None:
         raise ValueError("A valid model must be provided.")
 
@@ -655,7 +655,7 @@ def narrate_my_trip(vacation_info, itinerary, client, model, filename="/tmp/my_t
 
                 Do not specify the cost of each activity.
 
-                Do not reference the the narrative itself in the response.
+                Do not reference the narrative itself in the response.
                 """,
             }
         ],
