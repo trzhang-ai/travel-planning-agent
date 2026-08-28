@@ -259,8 +259,8 @@ uv run python scripts/validate_submission.py
 
 The project passed the Udacity rubric review. In the archived passing execution,
 the post-ReAct application gate returned `success=True` with `failures=[]`
-across all seven evaluations. The accepted itinerary scheduled 2, 3, and 2
-activities across the three trip dates and totaled 128 against the 130-unit
+across all seven evaluations. The accepted itinerary scheduled 3, 2, and 2
+activities across the three trip dates and totaled 130 against the 130-unit
 budget.
 
 The GitHub notebook is maintained as a source-clean artifact without stored
