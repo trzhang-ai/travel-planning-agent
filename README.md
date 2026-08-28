@@ -1,161 +1,176 @@
 # AgentsVille Trip Planner
 
-AgentsVille Trip Planner is a learning project that demonstrates how a large
-language model (LLM) can participate in a constrained business workflow rather
-than simply generate free-form travel advice. The system creates an itinerary
-from supplied traveler, weather, and activity data, validates the result, and
-then revises it in response to traveler feedback.
+AgentsVille Trip Planner is a constraint-aware itinerary planning and revision
+workflow built with structured LLM outputs, Python validation, semantic
+evaluators, and a tool-using repair loop.
 
-This repository is based on a Udacity project scaffold. The course supplied the
-fictional scenario, notebook structure, support library, mocked data, and core
-workflow interfaces. The completed exercise work includes the required
-Pydantic fields, itinerary/weather/revision prompts, tool documentation,
-constraint logic in those prompts, and parser-compatible output contracts. The
-repository cleanup, README, rubric evidence map, and offline validator were
-added for a reviewable submission. `project_lib.py` remains attributed support
-infrastructure rather than an independently authored framework. The
-[public course repository](https://github.com/udacity/cd14526-Effective-Prompting-AgenticAIC1-exercises)
-may differ from the downloaded classroom version used here.
+Given traveler preferences, trip dates, a shared budget, weather forecasts, and
+an authoritative activity catalog, the system produces a typed `TravelPlan`,
+checks it against business rules, incorporates later traveler feedback, and
+accepts the revised plan only after an independent final evaluation.
 
-## Business problem
+The important engineering problem is not free-form travel recommendation. It is
+controlling an LLM inside a decision workflow where source integrity,
+arithmetic, scheduling, user preferences, and acceptance criteria remain
+inspectable.
 
-The fictional travelers, Yuri and Hiro, are visiting AgentsVille from
-2025-06-10 through 2025-06-12 with a budget of 130 currency units. The planner
-must produce a machine-readable itinerary that satisfies several constraints at
-the same time. It is one shared group itinerary: both companions attend each
-selected activity, while the complete set of choices must cover each person's
-individual interests.
+## Business problem and success criteria
 
-- cover every trip date;
-- select only activities available on the correct date;
-- match activities to the travelers' individual interests;
-- avoid weather-incompatible outdoor activities unless a suitable backup is
-  explicitly available;
-- prevent activities on the same day from overlapping;
-- keep the exact sum of activity prices within budget; and
+The fictional travelers, Yuri and Hiro, visit AgentsVille from 2025-06-10
+through 2025-06-12 with a shared budget of 130 currency units. Both travelers
+follow one group itinerary; an activity appears once even when one traveler's
+interests primarily motivate the selection.
+
+The workflow targets the following requirements:
+
+- cover every date in the inclusive trip interval;
+- use only authoritative activities available on the correct date;
+- represent every traveler's individual interests across the shared itinerary;
+- avoid weather-incompatible activities unless the source description provides
+  a suitable backup;
+- prevent same-day activity times from overlapping;
+- calculate the exact activity total and remain within the shared budget; and
 - incorporate later feedback requesting at least two activities per day.
 
-The deeper business pattern is transferable. An LLM proposes decisions using
-enterprise facts, deterministic and semantic checks validate those decisions,
-and a tool-using revision loop repairs failures before the output is accepted.
-The same pattern can support scheduling, quoting, claims review, procurement,
-and other constrained workflows.
+The architecture is transferable beyond travel. The same
+proposal → validation → repair → acceptance pattern can support scheduling,
+quoting, procurement, claims review, and other workflows in which an LLM
+recommends an action but application code owns factual retrieval and acceptance.
 
-## End-to-end workflow
+## System architecture
 
 ```mermaid
 flowchart LR
     A[VacationInfo] --> B[Mock weather and activity APIs]
     B --> C[Itinerary planning agent]
     C --> D[TravelPlan candidate]
-    D --> E[Deterministic and LLM evaluators]
+    D --> E[Deterministic and semantic evaluators]
     E -->|failures| F[ReAct revision agent]
     F --> G[Local Python tools]
-    G --> F
+    G -->|observations| F
     F --> E
-    E -->|all checks pass| H[Validated TravelPlan]
+    E -->|all checks pass| H[Application acceptance gate]
+    H --> I[Validated TravelPlan]
 ```
 
-The workflow has two agent stages:
+The workflow has two model-driven stages and one application-owned gate:
 
-1. **Initial planning.** The itinerary agent receives a `VacationInfo` object
-   in the user message. Weather and activity records are grounded in the system
-   prompt. The model returns a JSON object that validates as `TravelPlan`.
-2. **Evaluation and revision.** Evaluators report constraint failures. The
-   revision agent uses a text-based ReAct protocol to choose one local tool at a
-   time, observe its result, update the complete candidate plan, and submit only
-   after the candidate passes every configured evaluation.
+1. **Initial planning.** The system prompt embeds the serialized
+   `VacationInfo`, weather records, activity records, and `TravelPlan` schema in
+   its Context section. The same `VacationInfo` is also sent as the user
+   message. The model returns JSON that Python validates as `TravelPlan`.
+2. **Evaluation and revision.** Evaluators return actionable failures. A
+   text-based ReAct agent requests one local tool at a time, receives the
+   Python-generated observation, carries the complete candidate forward, and
+   iterates toward a passing plan.
+3. **Independent acceptance.** After the loop returns `travel_plan_2`, Python
+   runs the complete evaluator suite again and raises if any requirement fails.
 
-## Architecture and responsibilities
+## Runtime data flow
 
-| Layer | Main responsibilities | What it does not do |
+One ReAct turn follows this sequence:
+
+```text
+Python sends system instructions + current message history
+        ↓
+LLM returns THOUGHT + ACTION JSON as text
+        ↓
+Python parses ACTION, resolves tool_name, and executes tool_fn(**arguments)
+        ↓
+Python appends the tool result as OBSERVATION
+        ↓
+The next model request receives the updated history
+```
+
+The API call is synchronous. `ACTION:` is not a signal emitted into the Python
+runtime; it is a text delimiter that Python looks for after the complete model
+response has returned.
+
+## LLM and Python responsibilities
+
+> The LLM proposes plans, semantic judgments, and tool requests. Python owns
+> authoritative data access, function execution, schema validation, arithmetic,
+> evaluation, conversation state, and the final acceptance gate.
+
+| Component | Responsibility | Boundary |
 |---|---|---|
-| `project_starter.ipynb` | Defines the Pydantic contracts, prompts, evaluators, tool wrappers, ReAct parser/dispatcher, and final validation | It does not provide the underlying mocked data or generic chat transport |
-| `project_lib.py` | Provides `ChatAgent`, the Chat Completions wrapper, the interest enum, mocked weather/activity data, and display helpers | It does not decide which ReAct tool to call and does not revise the itinerary |
-| LLM | Interprets the request, proposes structured plans, judges semantic weather compatibility, and selects the next tool with arguments | It does not execute Python functions or directly access Python memory |
-| Python | Retrieves authoritative data, calculates values, validates schemas and rules, parses tool requests, invokes real functions, records observations, and controls stopping | It does not rely on model prose as proof that a hard constraint passed |
+| `project_starter.ipynb` | Defines domain models, prompts, evaluators, exposed tools, text-action parsing, the revision loop, and the post-loop acceptance gate | It relies on the support module for mocked records and generic chat transport |
+| `project_lib.py` | Supplies the chat wrapper, mocked weather and activity records, interest enum, formatting helpers, and optional narration support | It does not choose tools, revise a plan, or decide whether a completed plan is acceptable |
+| LLM | Creates candidate plans, interprets natural-language weather compatibility, evaluates traveler feedback, and selects the next requested tool | It cannot directly invoke local functions or inspect Python memory |
+| Python application | Parses model output, executes functions, retrieves authoritative records, calculates totals, validates Pydantic objects, records observations, limits the loop, and performs final evaluation | It does not treat confident model prose as proof that a hard rule passed |
 
-`project_lib.py` is important even though students normally do not edit it. It
-is the communication and mocked-data layer. The notebook's
-`run_react_cycle()` is the orchestrator: it sends message history to the LLM,
-parses the returned `ACTION` JSON, executes the matching Python function, and
-adds the result as an `OBSERVATION` for the next model turn.
-
-The key interaction can be summarized in one sentence:
-
-> The LLM proposes a structured tool request; Python parses, executes, and
-> returns the result; the LLM uses that observation to choose the next request.
+`project_lib.py` is therefore important even though it is supplied
+infrastructure. `ChatAgent.reset()` places the complete system prompt in the
+message list, and `ChatAgent.get_response()` sends that list to the
+Chat Completions-compatible endpoint. The notebook's `run_react_cycle()` owns
+the domain-specific orchestration after each response returns.
 
 ## Data contracts
 
 Pydantic models make the interface between the LLM and Python explicit:
 
-- `VacationInfo` contains travelers, destination, arrival/departure dates, and
-  budget.
+- `Traveler` contains one person's identity, age, and interests.
+- `VacationInfo` contains the travelers, destination, inclusive date range,
+  and group budget.
 - `Weather` represents the authoritative forecast for one date.
 - `Activity` represents one complete authoritative catalog record.
-- `ActivityRecommendation` keeps the source activity separate from the model's
+- `ActivityRecommendation` keeps catalog facts separate from the model's
   recommendation reasons.
 - `ItineraryDay` groups a date, its weather, and selected recommendations.
-- `TravelPlan` is the final machine-validated output containing the city, trip
-  dates, exact total cost, and daily itinerary objects.
+- `TravelPlan` is the final machine-validated object containing the city, trip
+  boundaries, total cost, and daily itinerary objects.
 
-This prevents downstream code from accepting merely plausible prose. The final
-answer must have the exact fields and nested types required by `TravelPlan`.
+The model does not return the schema itself. It must return an instance whose
+fields and nested values validate against the schema. This prevents plausible
+prose or partial JSON from silently entering downstream logic.
 
-## Evaluation strategy
+## Constraint and evaluation coverage
 
-The project deliberately combines deterministic checks with two semantic LLM
-checks:
+The project combines deterministic checks with semantic LLM checks:
 
-| Evaluation | Implementation | Purpose |
+| Evaluation | Owner | Purpose |
 |---|---|---|
-| Trip dates | Python | Confirms the requested arrival/departure boundaries |
-| Total-cost accuracy | Python | Recomputes selected activity prices |
-| Activity integrity | Python + mocked API | Detects invented or altered activity records |
-| Interest coverage | Python | Confirms traveler interests are represented |
-| Budget | Python | Enforces the maximum trip budget |
-| Weather compatibility | LLM evaluator | Interprets indoor/outdoor descriptions and backup options |
-| Traveler feedback | LLM evaluator | Judges whether the revised plan has at least two activities per day |
+| Trip boundaries | Python | Confirms the requested arrival and departure dates |
+| Total-cost accuracy | Python | Recomputes the sum of selected activity prices |
+| Activity-record integrity | Python + mocked API | Detects missing, invented, paraphrased, or altered catalog records |
+| Interest coverage | Python | Confirms every traveler receives at least one interest match |
+| Budget compliance | Python | Enforces the maximum group budget |
+| Weather compatibility | LLM evaluator | Interprets indoor/outdoor descriptions and explicit backup options |
+| Traveler-feedback incorporation | LLM evaluator | Judges whether the revision contains at least two activities per day |
 
-A post-ReAct acceptance-gate cell runs the complete evaluation suite again
-outside the agent loop. This is an application-side decision rather than a
-claim made by the model itself.
+This split reflects a general design principle: exact facts, identifiers,
+arithmetic, and schemas belong in deterministic code; natural-language
+interpretation can use a model when the decision boundary is genuinely
+semantic. Model-based checks remain bounded by an enum contract and are backed
+by the final application-side evaluation.
 
-## Chain-of-Thought and ReAct
+## CoT and ReAct: repository pattern versus modern practice
 
-In this course, both terms describe prompting patterns, but they solve different
-problems.
+Chain-of-Thought prompting and ReAct are not interchangeable. CoT decomposes a
+single decision; ReAct alternates reasoning, requested actions, and external
+observations. Neither concept is simply obsolete. What has changed is how much
+process must be written into the prompt and how tool calls are represented.
 
-| Dimension | Chain-of-Thought (CoT) prompt | ReAct prompt |
-|---|---|---|
-| Main goal | Improve one response by decomposing a constrained planning task | Solve an iterative task that needs external tools and feedback |
-| Course flow | Analyze constraints, then emit one final `TravelPlan` | `THOUGHT -> ACTION -> OBSERVATION`, repeated until accepted |
-| External actions | None during the model response | Python executes requested tools between model turns |
-| Best fit | Planning, comparison, or calculation from context already supplied | Searching, checking, repairing, and validating against external state |
-| Project use | Builds the first itinerary | Revises it after feedback and evaluator failures |
+| Dimension | Explicit CoT: repository pattern | Modern reasoning workflow | Text ReAct: repository pattern | Modern tool-using workflow |
+|---|---|---|---|---|
+| Primary purpose | Decompose one constrained planning response | Define the outcome, evidence, constraints, success criteria, and output contract while allowing the model to choose an efficient reasoning path | Alternate model decisions with external observations until a valid plan is produced | Use native tool calls and application-managed state to gather data, take actions, and validate results |
+| Prompt style | Detailed planning steps plus a visible, concise `ANALYSIS` section | Outcome-first, direct instructions; prescribe individual steps only when the process itself is a requirement | Require exactly one textual `THOUGHT` and one textual `ACTION` JSON object per turn | Supply tools as API-level definitions with typed JSON Schemas and concise descriptions |
+| Reasoning surface | The model reports a checklist-style decision summary before the final JSON | Request only the explanation or decision summary needed by the user or audit process; the model can reason internally | The model writes a short rationale before every requested action | A concise user-visible preamble is optional; a custom `THOUGHT:` delimiter is unnecessary |
+| Output contract | A fenced JSON block is extracted and validated with Pydantic | Structured Outputs can enforce a response schema at the API boundary | Tool names, argument rules, and examples are embedded in system-prompt text | Function tools are passed separately from messages and can use strict argument schemas |
+| Tool invocation | None during the initial response | Structured output can be combined with later application validation | Python searches ordinary text for `ACTION:` and repairs/parses the following JSON | The API returns a structured tool-call item with a tool name, arguments, and call identifier |
+| Tool execution | Not applicable until generation completes | Application code owns all real side effects | Python maps `tool_name` to a local function and calls `tool_fn(**arguments)` | Application code executes the requested function and returns a linked tool result |
+| State | All planning facts are supplied in prompt context | Conversation or response state can retain relevant context | Python manually appends `OBSERVATION` to chat history | Responses API state or explicitly replayed response/tool items carry the workflow forward |
+| Completion | One Pydantic-valid `TravelPlan` is returned | Structured output plus application-side rules define acceptance | The prompt tells the model when to request `final_answer_tool` | The application enforces stopping rules and final acceptance independently of the model's claim |
+| Role here | Produces the initial itinerary | Recommended evolution for a production planner | Revises the itinerary after feedback and evaluator failures | Recommended evolution for replacing handwritten action parsing |
+| Current status | Useful when a specific reasoning procedure or user-facing decision summary is required | Usually preferable for capable reasoning models because it avoids unnecessary process micromanagement | The reason–act–observe concept remains useful and inspectable | Native function calling replaces the fragile text protocol, not the need for orchestration |
 
-The notebook asks for a concise `ANALYSIS` or `THOUGHT` summary because the
-rubric explicitly teaches those text protocols. It does not require an
-exhaustive transcript of hidden model reasoning.
-
-### Course pattern versus a modern production pattern
-
-The course implementation is intentionally transparent and educational. A
-production implementation would usually move more of the protocol into the API
-and application layer.
-
-| Course-compatible pattern used here | Typical modern production pattern |
-|---|---|
-| The prompt requests visible `THOUGHT:` and `ACTION:` text | The model need not expose private reasoning; instructions focus on goals and constraints |
-| Tool names, purposes, and parameters are inserted into the system prompt | Tools are supplied as structured function definitions with JSON Schemas |
-| The model writes an action JSON object as ordinary text | The API returns a structured function/tool-call item |
-| Python finds `ACTION:` and parses the following text | Python reads the structured tool name and validated arguments directly |
-| Prompt instructions tell the model when it may finish | Python also enforces completion gates, such as requiring the exact last-passing plan |
-
-The modern pattern is generally more robust, but replacing the notebook's
-text protocol with native function calling would no longer demonstrate the
-specific CoT and ReAct concepts required by this assignment.
+Current official OpenAI guidance recommends simple, direct prompts for
+reasoning models and notes that explicit “think step by step” instructions can
+be unnecessary. It also defines function calling as an API-level interface in
+which tools use typed schemas, models return structured calls, applications
+execute the real functions, and applications return the tool results. This
+project intentionally retains the visible text protocols required by its
+learning objectives while documenting how the same architecture would evolve.
 
 ## Text-based ReAct mechanics
 
@@ -169,92 +184,140 @@ ACTION:
 {"tool_name": "run_evals_tool", "arguments": {"travel_plan": {"...": "complete TravelPlan"}}}
 ````
 
-The placeholders in the prompt are instructions to the model; a developer does
-not fill them manually at runtime. The sequence is:
+The angle-bracketed placeholders in the actual prompt are instructions to the
+model, not values that a developer fills manually at runtime. Each turn works
+as follows:
 
-1. `ChatAgent` sends the system prompt, original plan, and message history to
-   the LLM.
-2. The LLM fills the action object with a tool name and JSON arguments.
-3. The synchronous API call returns one ordinary text string to Python.
-4. `run_react_cycle()` locates `ACTION:`, parses the JSON, and matches
-   `tool_name` against the local function objects in `ALL_TOOLS`.
-5. Python calls the function with `tool_fn(**arguments)`.
-6. Python adds the function result to history as an `OBSERVATION` user message.
-7. The next model call receives that history and selects the next action.
+1. `ChatAgent` sends the system prompt, original plan, and accumulated history.
+2. The LLM chooses a tool and fills the JSON arguments using the current plan
+   and latest observation.
+3. The synchronous API call returns one ordinary text string.
+4. `run_react_cycle()` extracts the payload after `ACTION:` and parses it.
+5. Python matches `tool_name` against `ALL_TOOLS` and executes the real function.
+6. Python appends the function result as an `OBSERVATION` user message.
+7. The next model request receives that history and chooses the next action.
 
-`final_answer_tool` is primarily a protocol-level exit marker in this notebook.
-When the orchestrator sees that name, it validates the supplied `final_output`
-as `TravelPlan` and returns it, ending the loop.
+Within `run_react_cycle()`, `final_answer_tool` is a protocol-level stop signal.
+When the model requests that tool, Python validates `final_output` as a
+`TravelPlan` and returns it from the loop.
 
-## Project structure
+The system prompt requires that object to be identical to the candidate from
+the immediately preceding successful `run_evals_tool` call. The loop does not,
+however, persist and compare those two objects programmatically. Trust is closed
+after the loop by the independent acceptance gate, which runs the complete
+evaluator suite on `travel_plan_2` and raises if any evaluation fails. A
+production implementation could additionally retain a canonical serialization
+or hash of the last passing candidate and reject a different final submission.
+
+## Repository structure
 
 ```text
 .
-├── project_starter.ipynb          # Completed, output-free submission notebook
-├── project_lib.py                 # Udacity support framework and mocked data
+├── project_starter.ipynb          # Source-clean, completed workflow notebook
+├── project_lib.py                 # Udacity-provided support and mocked data
 ├── docs/
 │   └── rubric-alignment.md        # Criterion-by-criterion evidence map
 ├── scripts/
-│   └── validate_submission.py     # Offline notebook hygiene and contract checks
+│   └── validate_submission.py     # Deterministic offline contract checks
 ├── .env.example                   # Environment-variable template
-├── pyproject.toml                 # Reproducible Python dependencies
+├── pyproject.toml                 # Locked project metadata and dependencies
+├── uv.lock                        # Exact dependency resolution
 └── README.md
 ```
 
-## Setup
+The output-bearing notebook used for the successful Udacity submission is
+retained separately in local `Archive.zip`. The archive is intentionally
+excluded from version control so the GitHub review surface does not include
+large prompt dumps or stochastic model traces.
 
-This project uses Python 3.13 and `uv` for dependency management.
+## Setup and execution
+
+The repository targets Python 3.13 and uses `uv` for dependency management.
 
 ```bash
 uv sync --locked
 cp .env.example .env
 ```
 
-Set `OPENAI_API_KEY` in `.env`. The course environment uses a Vocareum-compatible
-endpoint; `OPENAI_BASE_URL` can be changed for another compatible endpoint.
+Set `OPENAI_API_KEY` in `.env`. The downloaded Udacity environment uses a
+Vocareum-compatible endpoint; set `OPENAI_BASE_URL` to another compatible
+endpoint if required.
 
-Then select the project environment as the Jupyter kernel and run
-`project_starter.ipynb` from top to bottom. LLM calls are stochastic and may use
-paid API capacity.
+Select the resulting environment as the Jupyter kernel and run
+`project_starter.ipynb` from top to bottom. The optional narrative cell can make
+an additional text-generation and speech call, but it is not part of planning,
+revision, or acceptance. Model calls are stochastic and may consume paid or
+course-provided API capacity.
 
-For a deterministic offline repository check:
+Run the deterministic repository check without making API calls:
 
 ```bash
 uv run python scripts/validate_submission.py
 ```
 
-## Validation status
+## Verification status
 
-The pre-cleanup notebook was run successfully: its saved run produced a revised
-plan and the final seven evaluations returned `success=True` with an empty
-failure list. Outputs were then removed and the explanatory/prompt wording was
-professionally clarified. The exact current, output-free artifact has received
-static validation rather than another online end-to-end run. The repository's
-offline validator checks cell preservation, Python syntax, cell-specific prompt
-contracts, output cleanliness, and obvious secret leakage without making API
-calls.
+The project passed the Udacity rubric review. In the archived passing execution,
+the post-ReAct application gate returned `success=True` with `failures=[]`
+across all seven evaluations. The accepted itinerary scheduled 2, 3, and 2
+activities across the three trip dates and totaled 128 against the 130-unit
+budget.
 
-Because LLM behavior is stochastic, an output-free copy cannot itself prove
-that every future online run will follow the same path. Re-run the notebook in
-an appropriately configured course environment when fresh execution evidence
-is required.
+The GitHub notebook is maintained as a source-clean artifact without stored
+model responses, prompt dumps, execution counts, or ReAct trajectories. The
+execution-bearing submission is retained separately. The offline validator
+checks notebook structure, Python syntax, required prompt and tool contracts,
+source hygiene, and obvious secret leakage; it does not claim that a future
+stochastic run will follow exactly the same trajectory.
 
-## Limitations
+## Limitations and production hardening
 
-- Weather and activity APIs are mocked and cover only the fictional course
-  scenario; this system does not perform real bookings.
-- The course evaluator suite does not contain a dedicated programmatic
-  same-day overlap check. The prompt prohibits overlap, and the displayed plan
-  is sorted for readability, but a production system should enforce scheduling
-  deterministically.
-- The weather and feedback checks use LLM judgments and can be stochastic.
-- The ReAct parser relies on a text label and JSON repair; native structured
-  tool calling would be safer in production.
-- Course support material is identified as such. No additional redistribution
-  license is asserted for Udacity-provided content.
+- Weather and activity APIs are mocked and cover only the fictional reference
+  scenario; the system performs no real search, booking, payment, or reservation.
+- The evaluator suite does not contain a dedicated deterministic same-day
+  overlap validator. The prompts require chronological, non-overlapping plans,
+  and the accepted run was non-overlapping, but production code should enforce
+  schedule feasibility independently.
+- Weather compatibility and traveler-feedback incorporation use LLM judgments
+  and can vary across runs. Production use should calibrate these evaluators on
+  representative labeled cases and monitor disagreement rates.
+- The ReAct parser relies on a text label and JSON repair. Native function
+  calling with strict schemas would remove much of this parsing risk.
+- The loop does not cryptographically or structurally bind `final_answer_tool`
+  to the immediately preceding passing candidate; the post-loop gate catches
+  invalid submissions, while production code should also compare the objects.
+- Dynamic business facts are embedded in the initial system prompt for rubric
+  compatibility. A production implementation would normally separate stable
+  developer instructions from request-specific data and use structured inputs
+  or retrieval.
+- The notebook is an applied learning project, not a production travel service,
+  and the passing result is not evidence of live customer impact.
 
-## Rubric
+## Provenance and authorship
 
-The detailed evidence map is in
-[`docs/rubric-alignment.md`](docs/rubric-alignment.md). It follows the
-[Udacity project rubric](https://learn.udacity.com/nd900?version=1.3.55&partKey=cd14526&lessonKey=17acdfc4-8a19-4448-8235-4beee6d4fc64&project=rubric).
+This implementation is based on the Udacity AgentsVille Trip Planner scaffold.
+Udacity supplied the fictional scenario, notebook workflow, support module,
+mocked data, and core interfaces.
+
+The completed implementation defines and refines the Pydantic contracts,
+itinerary-generation prompt, weather evaluator, activity-tool documentation,
+revision-agent prompt, tool-use rules, parser-compatible output contracts,
+evaluation integration, independent acceptance gate, repository validation,
+and technical documentation.
+
+`project_lib.py` is retained and attributed as course-provided support
+infrastructure; it is not presented as an independently designed framework. The
+project performs no real booking and is not described as a production
+deployment. No additional redistribution license is asserted for
+Udacity-provided material. The [public course repository](https://github.com/udacity/cd14526-Effective-Prompting-AgenticAIC1-exercises)
+may differ from the downloaded classroom version used for this implementation.
+
+## References
+
+- [Udacity project rubric](https://learn.udacity.com/nd900?version=1.3.55&partKey=cd14526&lessonKey=17acdfc4-8a19-4448-8235-4beee6d4fc64&project=rubric)
+- [OpenAI reasoning best practices](https://developers.openai.com/api/docs/guides/reasoning-best-practices)
+- [OpenAI function calling guide](https://developers.openai.com/api/docs/guides/function-calling)
+- [OpenAI Responses API guide](https://developers.openai.com/api/docs/guides/migrate-to-responses)
+
+The detailed rubric evidence map is available in
+[`docs/rubric-alignment.md`](docs/rubric-alignment.md).
