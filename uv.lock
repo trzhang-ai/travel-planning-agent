@@ -8,7 +8,7 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "agentsville-trip-planner"
+name = "travel-planning-agent"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

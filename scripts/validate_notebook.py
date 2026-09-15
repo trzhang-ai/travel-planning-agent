@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-NOTEBOOK_PATH = PROJECT_ROOT / "project_starter.ipynb"
+NOTEBOOK_PATH = PROJECT_ROOT / "travel_planning.ipynb"
 
 
 def require(condition: bool, message: str) -> None:

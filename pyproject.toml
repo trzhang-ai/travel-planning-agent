@@ -1,5 +1,5 @@
 [project]
-name = "agentsville-trip-planner"
+name = "travel-planning-agent"
 version = "0.1.0"
 description = "A constrained itinerary planning and ReAct revision workflow"
 readme = "README.md"

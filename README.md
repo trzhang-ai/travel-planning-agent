@@ -1,6 +1,6 @@
-# AgentsVille Trip Planner
+# Travel Planning Agent
 
-AgentsVille Trip Planner is a constraint-aware itinerary planning and revision
+Travel Planning Agent is a constraint-aware itinerary planning and revision
 workflow built with structured LLM outputs, Python validation, semantic
 evaluators, and a tool-using repair loop.
 
@@ -94,7 +94,7 @@ response has returned.
 
 | Component | Responsibility | Boundary |
 |---|---|---|
-| `project_starter.ipynb` | Defines domain models, prompts, evaluators, exposed tools, text-action parsing, the revision loop, and the post-loop acceptance gate | It relies on the support module for mocked records and generic chat transport |
+| `travel_planning.ipynb` | Defines domain models, prompts, evaluators, exposed tools, text-action parsing, the revision loop, and the post-loop acceptance gate | It relies on the support module for mocked records and generic chat transport |
 | `project_lib.py` | Supplies the chat wrapper, mocked weather and activity records, interest enum, formatting helpers, and optional narration support | It does not choose tools, revise a plan, or decide whether a completed plan is acceptable |
 | LLM | Creates candidate plans, interprets natural-language weather compatibility, evaluates traveler feedback, and selects the next requested tool | It cannot directly invoke local functions or inspect Python memory |
 | Python application | Parses model output, executes functions, retrieves authoritative records, calculates totals, validates Pydantic objects, records observations, limits the loop, and performs final evaluation | It does not treat confident model prose as proof that a hard rule passed |
@@ -213,12 +213,12 @@ or hash of the last passing candidate and reject a different final submission.
 
 ```text
 .
-├── project_starter.ipynb          # Source-clean, completed workflow notebook
+├── travel_planning.ipynb          # Source-clean, completed workflow notebook
 ├── project_lib.py                 # Udacity-provided support and mocked data
 ├── docs/
 │   └── rubric-alignment.md        # Criterion-by-criterion evidence map
 ├── scripts/
-│   └── validate_submission.py     # Deterministic offline contract checks
+│   └── validate_notebook.py       # Deterministic offline contract checks
 ├── .env.example                   # Environment-variable template
 ├── pyproject.toml                 # Locked project metadata and dependencies
 ├── uv.lock                        # Exact dependency resolution
@@ -244,7 +244,7 @@ Vocareum-compatible endpoint; set `OPENAI_BASE_URL` to another compatible
 endpoint if required.
 
 Select the resulting environment as the Jupyter kernel and run
-`project_starter.ipynb` from top to bottom. The optional narrative cell can make
+`travel_planning.ipynb` from top to bottom. The optional narrative cell can make
 an additional text-generation and speech call, but it is not part of planning,
 revision, or acceptance. Model calls are stochastic and may consume paid or
 course-provided API capacity.
@@ -252,7 +252,7 @@ course-provided API capacity.
 Run the deterministic repository check without making API calls:
 
 ```bash
-uv run python scripts/validate_submission.py
+uv run python scripts/validate_notebook.py
 ```
 
 ## Verification status
