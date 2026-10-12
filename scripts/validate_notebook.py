@@ -116,7 +116,7 @@ def main() -> None:
         for marker in markers:
             require(
                 marker in cell_source,
-                f"Notebook cell {notebook_index} is missing rubric marker {marker!r}.",
+                f"Notebook cell {notebook_index} is missing required marker {marker!r}.",
             )
 
     # Split the scanner terms so repository-wide searches do not mistake this
@@ -130,7 +130,7 @@ def main() -> None:
         "# Add " + "the ",
     ]
     for marker in unwanted_markers:
-        require(marker not in source, f"Starter or informal marker remains: {marker!r}.")
+        require(marker not in source, f"Placeholder or informal marker remains: {marker!r}.")
 
     secret_patterns = {
         "OpenAI-style secret": re.compile(r"\bsk-[A-Za-z0-9_-]{16,}"),
@@ -142,7 +142,7 @@ def main() -> None:
     print(
         "Repository validation passed: "
         f"{len(cells)} cells ({len(code_cells)} code, {len(markdown_cells)} Markdown), "
-        "no saved outputs, valid Python syntax, cell-specific rubric contracts "
+        "no saved outputs, valid Python syntax, cell-specific requirement contracts "
         "present, and no obvious secrets."
     )
 

@@ -1,8 +1,8 @@
-# Rubric Alignment
+# Requirements traceability
 
-This evidence map records how the completed notebook addresses the Udacity
-AgentsVille Trip Planner rubric. Cell numbers use the notebook's zero-based JSON
-order, so the references remain stable in the source-clean repository copy.
+This map links each design requirement to the notebook cell that implements it.
+Cell numbers use the notebook's zero-based JSON order, so the references remain
+stable in the source-clean repository copy.
 
 ## General prompt design
 
@@ -39,10 +39,8 @@ order, so the references remain stable in the source-clean repository copy.
 
 ## Execution evidence and repository hygiene
 
-The project passed the Udacity rubric review. The archived execution-bearing
-submission completed without saved Python error outputs. Its independent final
-evaluation returned `success=True` with an empty failure list across these seven
-checks:
+In the archived execution, the independent final evaluation returned
+`success=True` with an empty failure list across these seven checks:
 
 1. start and end dates;
 2. total-cost accuracy;
@@ -53,7 +51,5 @@ checks:
 7. traveler-feedback incorporation.
 
 The repository copy retains all 41 cells—31 code and 10 Markdown—while omitting
-stored prompts, model responses, execution counts, and ReAct traces. The
-successful execution-bearing submission is preserved separately in the local,
-version-control-excluded `Archive.zip`. This keeps the reviewed evidence
-recoverable without presenting stochastic run logs as source code.
+stored prompts, model responses, execution counts, and ReAct traces, so
+stochastic run logs are not presented as source code.
